@@ -2,10 +2,12 @@ from ppg_extraction import (
     extract_frames,
     extract_ppg_signal,
     bandpass_filter,
-    plot_signal,
     detect_peaks,
-    calculate_heart_rate
+    calculate_heart_rate,
+    extract_features
 )
+
+from model import predict_glucose
 
 video_path = "C:/Users/dilpr/Pictures/sample.mp4"
 
@@ -18,13 +20,17 @@ signal = extract_ppg_signal(frames)
 # Step 3
 filtered_signal = bandpass_filter(signal)
 
-# Step 4: detect peaks
+# Step 4
 peaks = detect_peaks(filtered_signal)
 
-# Step 5: plot with peaks
-plot_signal(filtered_signal, peaks, "Filtered Signal with Peaks")
-
-# Step 6: heart rate
+# Step 5
 heart_rate = calculate_heart_rate(peaks, len(frames))
 
+# Step 6: extract features
+features = extract_features(filtered_signal, peaks)
+
+# Step 7: predict glucose
+glucose = predict_glucose(features)
+
 print(f"Heart Rate: {heart_rate:.2f} BPM")
+print(f"Predicted Glucose: {glucose:.2f} mg/dL")

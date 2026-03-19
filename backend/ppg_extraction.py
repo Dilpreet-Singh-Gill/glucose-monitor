@@ -70,3 +70,31 @@ def calculate_heart_rate(peaks, total_frames, fps=30):
     duration_seconds = total_frames / fps
     heart_rate = (len(peaks) / duration_seconds) * 60
     return heart_rate
+
+def extract_features(signal, peaks):
+    signal = np.array(signal)
+
+    # Basic features
+    mean_val = np.mean(signal)
+    std_val = np.std(signal)
+    max_val = np.max(signal)
+    min_val = np.min(signal)
+
+    # Heartbeat features
+    peak_count = len(peaks)
+
+    # Peak intervals
+    if len(peaks) > 1:
+        intervals = np.diff(peaks)
+        avg_interval = np.mean(intervals)
+    else:
+        avg_interval = 0
+
+    return [
+        mean_val,
+        std_val,
+        max_val,
+        min_val,
+        peak_count,
+        avg_interval
+    ]
