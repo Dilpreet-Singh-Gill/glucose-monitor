@@ -3,12 +3,13 @@ import joblib
 from tensorflow.keras.models import load_model
 
 from ppg_extraction import *
-from calibration import apply_calibration
 
-model = load_model("ultimate_model.keras")
-scaler = joblib.load("scaler.save")
+model = load_model("final_model.keras")
+y_scaler = joblib.load("y_scaler.save")
+feature_scaler = joblib.load("feature_scaler.save")
 
-def predict_glucose_lstm(signal, user_id=None):
+def predict_glucose(signal):
+
     signal = normalize_signal(signal)
 
     if len(signal) < 120:
@@ -19,15 +20,17 @@ def predict_glucose_lstm(signal, user_id=None):
     signal_input = signal.reshape(1,120,1)
 
     peaks = detect_peaks(signal)
+
     adv = extract_advanced_features(signal, peaks)
-    freq = extract_frequency_features(signal)
+    hrv = calculate_hrv_features(peaks)
 
-    feat_input = np.array(adv + freq).reshape(1,-1)
+    features = adv + hrv
+    features = feature_scaler.transform([features])
 
-    pred = model.predict([signal_input, feat_input], verbose=0)
-    glucose = scaler.inverse_transform(pred)[0][0]
+    pred = model.predict([signal_input, features], verbose=0)
+    glucose = y_scaler.inverse_transform(pred)[0][0]
 
-    if user_id:
-        glucose = apply_calibration(user_id, glucose)
+    # 🔥 CLIP RANGE (IMPORTANT)
+    glucose = np.clip(glucose, 70, 200)
 
     return float(glucose)
