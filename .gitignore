@@ -1,66 +1,67 @@
-# =========================
-# Python (Backend)
-# =========================
+# ----------------------------
+# 🔐 Python / Backend
+# ----------------------------
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.pkl
-*.joblib
-*.h5
-*.pt
-*.pth
+*.sqlite3
+*.db
 
-# Virtual environment
+# Virtual Environment
 .venv/
 venv/
 env/
 
-# Python logs / temp
-*.log
-*.tmp
+# ----------------------------
+# 📦 ML Models & Data
+# ----------------------------
+*.h5
+*.keras
+*.pkl
+*.joblib
+scaler.save
 
-# =========================
-# Uploads / Generated files
-# =========================
-backend/uploads/*
-!backend/uploads/.gitkeep
+# Large datasets
+dataset/
+videos/
+uploads/
 
-# =========================
-# Dataset / Models (large files)
-# =========================
-dataset/*
-models/*
-!dataset/.gitkeep
-!models/.gitkeep
+# ----------------------------
+# 🔥 Flask
+# ----------------------------
+instance/
+.webassets-cache
 
-# =========================
-# React (Frontend)
-# =========================
+# ----------------------------
+# 🌐 Frontend (React)
+# ----------------------------
 frontend/node_modules/
 frontend/build/
-frontend/.env
-frontend/.env.local
 
-# npm logs
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# =========================
-# OS files
-# =========================
+# ----------------------------
+# 🖥️ OS / Editor
+# ----------------------------
 .DS_Store
 Thumbs.db
 
-# =========================
-# VS Code / Editor
-# =========================
+# VS Code
 .vscode/
-.idea/
 
-# =========================
-# Environment variables
-# =========================
+# ----------------------------
+# 🔑 Secrets
+# ----------------------------
 .env
-.env.*
+.env.local
+.env.*.local
+
+# ----------------------------
+# Misc
+# ----------------------------
+*.log
+*.tmp

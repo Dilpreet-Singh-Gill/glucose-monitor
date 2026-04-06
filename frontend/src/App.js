@@ -1,62 +1,119 @@
 import React, { useState } from "react";
+import axios from "axios";
+import { useDropzone } from "react-dropzone";
+import "./App.css";
 
 function App() {
   const [video, setVideo] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState([]);
 
-  const handleUpload = (e) => {
-    setVideo(e.target.files[0]);
+  const onDrop = (acceptedFiles) => {
+    setVideo(acceptedFiles[0]);
   };
 
-  const handleSubmit = async () => {
-    if (!video) {
-      alert("Please upload a video");
-      return;
-    }
+  const { getRootProps, getInputProps } = useDropzone({
+    accept: { "video/*": [] },
+    onDrop,
+  });
+
+  const handleUpload = async () => {
+    if (!video) return alert("Upload a video");
 
     const formData = new FormData();
     formData.append("video", video);
-
-    setLoading(true);
+    formData.append("user_id", "user1");
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/predict", {
-        method: "POST",
-        body: formData,
-      });
+      setLoading(true);
 
-      const data = await response.json();
-      setResult(data);
-    } catch (error) {
-      console.error(error);
-      alert("Error connecting to backend");
+      const res = await axios.post(
+        "http://127.0.0.1:5000/predict",
+        formData
+      );
+
+      setResult(res.data);
+
+      // Save history
+      setHistory((prev) => [
+        {
+          glucose: res.data.glucose,
+          heart_rate: res.data.heart_rate,
+          time: new Date().toLocaleTimeString(),
+        },
+        ...prev,
+      ]);
+    } catch (err) {
+      alert("Error occurred");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
-    <div style={{ textAlign: "center", marginTop: "50px" }}>
-      <h1>Non-Invasive Glucose Monitor 🩸</h1>
+    <div className="app">
 
-      <input type="file" accept="video/*" onChange={handleUpload} />
-      <br /><br />
+      {/* Header */}
+      <header>
+        <h1>🩸 GlucoAI Monitor</h1>
+        <p>Non-Invasive Glucose Prediction using AI</p>
+      </header>
 
-      <button onClick={handleSubmit}>Predict</button>
+      {/* Upload Section */}
+      <div className="card upload-card">
+        <div {...getRootProps()} className="dropzone">
+          <input {...getInputProps()} />
+          <p>📂 Drag & drop video OR click</p>
+          {video && <span>Selected: {video.name}</span>}
+        </div>
 
-      <br /><br />
+        <button onClick={handleUpload}>
+          {loading ? "Analyzing..." : "🚀 Predict Glucose"}
+        </button>
+      </div>
 
-      {loading && <p>Processing...</p>}
+      {/* Loader */}
+      {loading && <div className="loader"></div>}
 
+      {/* Result Section */}
       {result && (
-        <div>
-          <h2>Results</h2>
-          <p><b>Heart Rate:</b> {result.heart_rate} BPM</p>
-          <p><b>Glucose:</b> {result.glucose} mg/dL</p>
-          <p><b>Status:</b> {result.status}</p>
+        <div className="card result-card">
+          <h2>📊 Results</h2>
+
+          <div className="metrics">
+            <div className="metric">
+              <h3>Glucose</h3>
+              <p>{result.glucose} mg/dL</p>
+            </div>
+
+            <div className="metric">
+              <h3>Heart Rate</h3>
+              <p>{result.heart_rate} bpm</p>
+            </div>
+          </div>
+
+          <img
+            src={`data:image/png;base64,${result.graph}`}
+            alt="Graph"
+          />
         </div>
       )}
+
+      {/* History Section */}
+      {history.length > 0 && (
+        <div className="card history-card">
+          <h2>📜 History</h2>
+          {history.map((item, index) => (
+            <div key={index} className="history-item">
+              <span>{item.time}</span>
+              <span>Glucose: {item.glucose}</span>
+              <span>HR: {item.heart_rate}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
     </div>
   );
 }
