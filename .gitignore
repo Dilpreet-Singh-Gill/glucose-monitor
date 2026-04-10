@@ -20,8 +20,8 @@ env/
 *.keras
 *.pkl
 *.joblib
-scaler.save
-
+*.save
+test_pred.py
 # Large datasets
 dataset/
 videos/

@@ -5,7 +5,8 @@ import os
 from ppg_extraction import (
     extract_frames,
     extract_ppg_signal,
-    bandpass_filter,
+    remove_motion_artifacts,
+    adaptive_bandpass_filter,
     smooth_signal,
     normalize_signal,
     detect_peaks,
@@ -98,7 +99,8 @@ def predict():
             return jsonify({"error": "Invalid video"}), 400
 
         signal = extract_ppg_signal(frames)
-        signal = bandpass_filter(signal)
+        signal = remove_motion_artifacts(signal)
+        signal = adaptive_bandpass_filter(signal)
         signal = smooth_signal(signal)
         signal = normalize_signal(signal)
 
