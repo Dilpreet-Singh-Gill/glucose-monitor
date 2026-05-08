@@ -205,31 +205,18 @@ def extract_frames(video_path):
         logger.warning(f"Invalid FPS detected ({fps}), defaulting to {DEFAULT_FPS}")
         fps = DEFAULT_FPS
 
-    # Determine frame skip to target ~15 FPS instead of 30 FPS.
-    # This cuts processing time and memory in half, easily fitting within Render's 100s timeout.
-    # 15 FPS is well above the Nyquist rate for cardiac signals (0.7-3.5 Hz).
-    target_fps = 15.0
-    skip = max(1, int(round(fps / target_fps)))
+    # Determine frame skip for high-FPS videos
+    skip = max(1, int(round(fps / DEFAULT_FPS))) if fps > 45 else 1
     effective_fps = fps / skip
 
     frames = []
     frame_idx = 0
-
-    # Target width for resizing to save memory (preserves aspect ratio)
-    TARGET_WIDTH = 120
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
         if frame_idx % skip == 0:
-            # Resize frame immediately to save memory (prevents OOM on Render free tier)
-            h, w = frame.shape[:2]
-            if w > TARGET_WIDTH:
-                scale = TARGET_WIDTH / w
-                new_h = int(h * scale)
-                frame = cv2.resize(frame, (TARGET_WIDTH, new_h), interpolation=cv2.INTER_AREA)
-            
             frames.append(frame)
         frame_idx += 1
 
@@ -309,9 +296,7 @@ def extract_ppg_signal(frames):
         return []
 
     signal = []
-    # Disable skin detection for deployment — it's too CPU-intensive for Render's free tier
-    # and causes 100-second request timeouts (502 Bad Gateway). The center ROI fallback is fast.
-    use_skin_detection = False
+    use_skin_detection = True
     skin_detection_failures = 0
 
     for i, frame in enumerate(frames):

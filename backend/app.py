@@ -18,17 +18,10 @@ from ppg_extraction import (
     DEFAULT_FPS
 )
 
-from lstm_model import predict_glucose, _registry
+from lstm_model import predict_glucose
 from database import create_table, add_user, validate_user
 
 logger = logging.getLogger(__name__)
-
-# Preload models at startup so the 30-second load time doesn't happen
-# during a user's request (which causes 502 Bad Gateway timeouts on Render)
-logger.info("Preloading models...")
-_registry._load_standard()
-_registry._load_enhanced()
-logger.info("Models preloaded successfully.")
 
 # -------------------------------
 # 🔥 INIT APP
@@ -44,21 +37,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Initialize DB
 create_table()
-
-# -------------------------------
-# ERROR HANDLERS
-# -------------------------------
-@app.errorhandler(413)
-def request_entity_too_large(error):
-    return jsonify({"error": "Video file is too large. Max size is 100MB."}), 413
-
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"error": "Endpoint not found"}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({"error": "Internal server error"}), 500
 
 # ===============================
 # Validation Constants
@@ -157,23 +135,6 @@ def predict():
         # PROCESS PPG SIGNAL (pass FPS)
         # -------------------------------
         signal = extract_ppg_signal(frames)
-        
-        # --- UPSAMPLE SIGNAL TO 30 FPS FOR AI MODEL ---
-        # We extracted at 15 FPS to save CPU, but the AI was trained on 30 FPS.
-        # We must interpolate the 1D signal back to 30 FPS to preserve temporal features.
-        from scipy.interpolate import interp1d
-        import numpy as np
-        
-        if effective_fps > 0 and abs(effective_fps - DEFAULT_FPS) > 2:
-            time_original = np.linspace(0, duration_sec, len(signal))
-            num_target_frames = int(duration_sec * DEFAULT_FPS)
-            time_target = np.linspace(0, duration_sec, num_target_frames)
-            
-            interpolator = interp1d(time_original, signal, kind='cubic', fill_value="extrapolate")
-            signal = interpolator(time_target)
-            effective_fps = DEFAULT_FPS  # Pipeline now treats it as 30 FPS
-            logger.info(f"Upsampled signal from {len(frames)} to {len(signal)} points to match training FPS.")
-
         signal = remove_motion_artifacts(signal, fps=effective_fps)
         signal = adaptive_bandpass_filter(signal, fps=effective_fps)
         signal = smooth_signal(signal)
