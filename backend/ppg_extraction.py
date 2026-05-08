@@ -212,11 +212,21 @@ def extract_frames(video_path):
     frames = []
     frame_idx = 0
 
+    # Target width for resizing to save memory (preserves aspect ratio)
+    TARGET_WIDTH = 160
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
         if frame_idx % skip == 0:
+            # Resize frame immediately to save memory (prevents OOM on Render free tier)
+            h, w = frame.shape[:2]
+            if w > TARGET_WIDTH:
+                scale = TARGET_WIDTH / w
+                new_h = int(h * scale)
+                frame = cv2.resize(frame, (TARGET_WIDTH, new_h), interpolation=cv2.INTER_AREA)
+            
             frames.append(frame)
         frame_idx += 1
 

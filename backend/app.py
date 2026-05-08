@@ -38,6 +38,21 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Initialize DB
 create_table()
 
+# -------------------------------
+# ERROR HANDLERS
+# -------------------------------
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({"error": "Video file is too large. Max size is 100MB."}), 413
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
+
 # ===============================
 # Validation Constants
 # ===============================
