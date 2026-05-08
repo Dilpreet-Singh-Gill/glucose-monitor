@@ -157,6 +157,23 @@ def predict():
         # PROCESS PPG SIGNAL (pass FPS)
         # -------------------------------
         signal = extract_ppg_signal(frames)
+        
+        # --- UPSAMPLE SIGNAL TO 30 FPS FOR AI MODEL ---
+        # We extracted at 15 FPS to save CPU, but the AI was trained on 30 FPS.
+        # We must interpolate the 1D signal back to 30 FPS to preserve temporal features.
+        from scipy.interpolate import interp1d
+        import numpy as np
+        
+        if effective_fps > 0 and abs(effective_fps - DEFAULT_FPS) > 2:
+            time_original = np.linspace(0, duration_sec, len(signal))
+            num_target_frames = int(duration_sec * DEFAULT_FPS)
+            time_target = np.linspace(0, duration_sec, num_target_frames)
+            
+            interpolator = interp1d(time_original, signal, kind='cubic', fill_value="extrapolate")
+            signal = interpolator(time_target)
+            effective_fps = DEFAULT_FPS  # Pipeline now treats it as 30 FPS
+            logger.info(f"Upsampled signal from {len(frames)} to {len(signal)} points to match training FPS.")
+
         signal = remove_motion_artifacts(signal, fps=effective_fps)
         signal = adaptive_bandpass_filter(signal, fps=effective_fps)
         signal = smooth_signal(signal)
