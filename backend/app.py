@@ -18,10 +18,17 @@ from ppg_extraction import (
     DEFAULT_FPS
 )
 
-from lstm_model import predict_glucose
+from lstm_model import predict_glucose, _registry
 from database import create_table, add_user, validate_user
 
 logger = logging.getLogger(__name__)
+
+# Preload models at startup so the 30-second load time doesn't happen
+# during a user's request (which causes 502 Bad Gateway timeouts on Render)
+logger.info("Preloading models...")
+_registry._load_standard()
+_registry._load_enhanced()
+logger.info("Models preloaded successfully.")
 
 # -------------------------------
 # 🔥 INIT APP
