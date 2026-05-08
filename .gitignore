@@ -17,11 +17,10 @@ env/
 # 📦 ML Models & Data
 # ----------------------------
 *.h5
-*.keras
 *.pkl
 *.joblib
-*.save
-test_pred.py
+# NOTE: .keras and .save files are NOT ignored — they must be
+# committed for deployment (model + scaler files).
 # Large datasets
 dataset/
 videos/

@@ -139,7 +139,7 @@ def assess_signal_quality(signal, fps=DEFAULT_FPS):
         pass
 
     # --- Usable segment detection ---
-    window_size = max(fps, 10)
+    window_size = int(max(fps, 10))
     if len(signal) > window_size:
         local_vars = [np.var(signal[i:i+window_size])
                       for i in range(0, len(signal) - window_size, window_size // 2)]
@@ -187,19 +187,27 @@ def extract_frames(video_path):
         video_path: Path to the video file.
 
     Returns:
-        List of BGR frames (numpy arrays).
+        Tuple of (frames, effective_fps):
+            - frames: List of BGR frames (numpy arrays).
+            - effective_fps: Actual FPS after subsampling (float).
     """
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
         logger.error(f"Cannot open video: {video_path}")
-        return []
+        return [], DEFAULT_FPS
 
     fps = cap.get(cv2.CAP_PROP_FPS) or DEFAULT_FPS
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+    # Guard against invalid FPS values reported by some codecs
+    if fps <= 0 or fps > 1000:
+        logger.warning(f"Invalid FPS detected ({fps}), defaulting to {DEFAULT_FPS}")
+        fps = DEFAULT_FPS
+
     # Determine frame skip for high-FPS videos
     skip = max(1, int(round(fps / DEFAULT_FPS))) if fps > 45 else 1
+    effective_fps = fps / skip
 
     frames = []
     frame_idx = 0
@@ -215,9 +223,9 @@ def extract_frames(video_path):
     cap.release()
 
     logger.info(f"Extracted {len(frames)} frames from {total_frames} total "
-                f"(FPS={fps:.1f}, skip={skip})")
+                f"(FPS={fps:.1f}, skip={skip}, effective_fps={effective_fps:.1f})")
 
-    return frames
+    return frames, effective_fps
 
 
 def extract_video_metadata(video_path):
@@ -627,35 +635,112 @@ def detect_peaks(signal, fps=DEFAULT_FPS):
 # =============================================================================
 # Heart Rate
 # =============================================================================
-def calculate_heart_rate(peaks, total_frames, fps=DEFAULT_FPS):
+def estimate_heart_rate_spectral(signal, fps=DEFAULT_FPS):
     """
-    Calculate heart rate from detected peaks.
+    Frequency-domain heart rate estimation using Welch PSD.
 
-    Uses peak-to-peak intervals for more accurate HR estimation
-    rather than simple peak-count / duration.
+    Used as a fallback when peak-based detection fails (e.g., noisy signals,
+    very short recordings, or low-amplitude PPG). Identifies the dominant
+    frequency in the cardiac band (0.7–3.5 Hz) and converts to BPM.
+
+    Args:
+        signal: Filtered/normalized PPG signal (numpy array).
+        fps: Frames per second.
+
+    Returns:
+        Heart rate in BPM (float). Returns 0.0 if estimation fails.
+    """
+    signal = np.array(signal, dtype=np.float64)
+
+    if len(signal) < MIN_SIGNAL_LENGTH:
+        return 0.0
+
+    try:
+        nperseg = min(len(signal), 256)
+        # Require at least 2x the segment length for Welch to be meaningful
+        if len(signal) < nperseg:
+            nperseg = len(signal)
+
+        freqs, psd = welch(signal, fs=fps, nperseg=nperseg)
+
+        # Cardiac frequency band: 0.7–3.5 Hz (42–210 BPM)
+        cardiac_mask = (freqs >= BANDPASS_LOW) & (freqs <= BANDPASS_HIGH)
+
+        if not np.any(cardiac_mask):
+            return 0.0
+
+        cardiac_psd = psd.copy()
+        cardiac_psd[~cardiac_mask] = 0
+
+        # Check if the cardiac band has meaningful power
+        total_power = np.sum(psd)
+        cardiac_power = np.sum(cardiac_psd)
+
+        if total_power < 1e-10 or cardiac_power / total_power < 0.05:
+            # Less than 5% of power in cardiac band — likely noise
+            logger.info("Spectral HR: insufficient cardiac power")
+            return 0.0
+
+        dominant_freq = freqs[np.argmax(cardiac_psd)]
+        hr = dominant_freq * 60.0
+
+        # Physiological clamp: 42–210 BPM (matching cardiac band)
+        if 42 <= hr <= 210:
+            logger.info(f"Spectral HR estimate: {hr:.1f} BPM "
+                        f"(dominant_freq={dominant_freq:.2f} Hz)")
+            return float(hr)
+        else:
+            return 0.0
+
+    except Exception as e:
+        logger.warning(f"Spectral HR estimation failed: {e}")
+        return 0.0
+
+
+def calculate_heart_rate(peaks, total_frames, fps=DEFAULT_FPS, signal=None):
+    """
+    Calculate heart rate from detected peaks with spectral fallback.
+
+    Uses peak-to-peak intervals for accurate HR estimation. When peak-based
+    detection fails (< 2 peaks), automatically falls back to frequency-domain
+    estimation via Welch PSD if a signal is provided.
 
     Args:
         peaks: Array of peak indices.
         total_frames: Total number of frames in the signal.
         fps: Frames per second.
+        signal: Optional PPG signal for spectral fallback.
 
     Returns:
-        Heart rate in BPM (float). Returns 0 if insufficient peaks.
+        Heart rate in BPM (float). Returns 0 only if all methods fail.
     """
-    if len(peaks) < 2 or total_frames == 0 or fps == 0:
-        return 0.0
+    if fps <= 0:
+        fps = DEFAULT_FPS
 
-    # Use median RR interval for robustness against outliers
-    rr_intervals = np.diff(peaks) / fps  # Convert to seconds
-    median_rr = np.median(rr_intervals)
+    # --- Primary: peak-based HR ---
+    if len(peaks) >= 2 and total_frames > 0:
+        rr_intervals = np.diff(peaks) / fps  # Convert to seconds
 
-    if median_rr <= 0:
-        return 0.0
+        # Filter out physiologically implausible intervals
+        valid_rr = rr_intervals[(rr_intervals > 0.27) & (rr_intervals < 2.0)]
 
-    hr = 60.0 / median_rr
+        if len(valid_rr) >= 1:
+            median_rr = np.median(valid_rr)
 
-    # Physiological clamp: 30–220 BPM
-    return float(np.clip(hr, 30, 220))
+            if median_rr > 0:
+                hr = 60.0 / median_rr
+                # Physiological clamp: 30–220 BPM
+                return float(np.clip(hr, 30, 220))
+
+    # --- Fallback: spectral HR ---
+    if signal is not None:
+        logger.info("Peak-based HR failed — attempting spectral fallback")
+        spectral_hr = estimate_heart_rate_spectral(signal, fps)
+        if spectral_hr > 0:
+            return spectral_hr
+
+    logger.warning("All HR estimation methods failed — returning 0")
+    return 0.0
 
 
 # =============================================================================

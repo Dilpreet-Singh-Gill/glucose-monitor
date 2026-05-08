@@ -302,7 +302,7 @@ def process_video_to_features(video_path):
         Tuple of (signal, extended_features, signal_quality) or None if failed.
     """
     try:
-        frames = extract_frames(video_path)
+        frames, effective_fps = extract_frames(video_path)
         if len(frames) == 0:
             logger.warning(f"No frames extracted from {video_path}")
             return None

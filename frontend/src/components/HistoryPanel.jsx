@@ -37,7 +37,9 @@ export default function HistoryPanel({ history }) {
                   <span className={styles.metricChip} style={{ color: gs.color, borderColor: `${gs.color}33` }}>
                     🩸 {item.glucose} mg/dL · {gs.label}
                   </span>
-                  <span className={styles.metricChip}>♥ {item.heart_rate} bpm</span>
+                  <span className={styles.metricChip}>
+                    ♥ {item.heart_rate > 0 ? `${item.heart_rate} bpm` : '— bpm'}
+                  </span>
                 </div>
               </div>
               <div className={styles.miniGauge}>
