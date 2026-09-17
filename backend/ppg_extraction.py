@@ -279,6 +279,63 @@ def _detect_skin_roi(frame):
     return skin_mask
 
 
+def extract_signal_from_video(video_path):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logger.error(f"Cannot open video: {video_path}")
+        return [], DEFAULT_FPS, 0
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or DEFAULT_FPS
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    if fps <= 0 or fps > 1000:
+        fps = DEFAULT_FPS
+
+    skip = max(1, int(round(fps / DEFAULT_FPS))) if fps > 45 else 1
+    effective_fps = fps / skip
+
+    signal = []
+    use_skin_detection = True
+    skin_detection_failures = 0
+    frame_idx = 0
+    processed_count = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        if frame_idx % skip == 0:
+            green = frame[:, :, 1]
+            h, w = green.shape
+            roi_values = None
+
+            if use_skin_detection:
+                skin_mask = _detect_skin_roi(frame)
+                if skin_mask is not None:
+                    masked_green = green[skin_mask > 0]
+                    if len(masked_green) > 100:
+                        roi_values = masked_green
+                    else:
+                        skin_detection_failures += 1
+                else:
+                    skin_detection_failures += 1
+
+                if processed_count > 10 and skin_detection_failures / (processed_count + 1) > 0.3:
+                    use_skin_detection = False
+
+            if roi_values is None:
+                roi = green[h // 4: 3 * h // 4, w // 4: 3 * w // 4]
+                roi_values = roi.flatten()
+
+            signal.append(float(np.mean(roi_values)))
+            processed_count += 1
+
+        frame_idx += 1
+
+    cap.release()
+    return signal, effective_fps, processed_count
+
 def extract_ppg_signal(frames):
     """
     Extract PPG signal using adaptive skin-tone ROI detection.

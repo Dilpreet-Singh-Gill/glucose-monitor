@@ -34,8 +34,8 @@ mediapipe==0.10.32
 ml_dtypes==0.5.4
 namex==0.1.0
 numpy==2.4.3
-opencv-contrib-python==4.13.0.92
-opencv-python==4.13.0.92
+opencv-contrib-python-headless==4.13.0.92
+opencv-python-headless==4.13.0.92
 opt_einsum==3.4.0
 optree==0.19.0
 packaging==26.0
@@ -57,7 +57,6 @@ scipy==1.17.1
 setuptools==82.0.1
 six==1.17.0
 sounddevice==0.5.5
-tensorflow==2.21.0
 tensorflow_cpu==2.21.0
 termcolor==3.3.0
 threadpoolctl==3.6.0

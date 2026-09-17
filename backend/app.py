@@ -4,7 +4,7 @@ import os
 import logging
 
 from ppg_extraction import (
-    extract_frames,
+    extract_signal_from_video,
     extract_ppg_signal,
     remove_motion_artifacts,
     adaptive_bandpass_filter,
@@ -106,21 +106,21 @@ def predict():
         warnings = []
 
         # -------------------------------
-        # EXTRACT FRAMES (with effective FPS)
+        # EXTRACT SIGNAL & FPS
         # -------------------------------
-        frames, effective_fps = extract_frames(video_path)
+        signal, effective_fps, frame_count = extract_signal_from_video(video_path)
 
-        if len(frames) == 0:
+        if frame_count == 0:
             return jsonify({"error": "Could not read video. The file may be corrupted or in an unsupported format."}), 400
 
         # -------------------------------
         # VIDEO DURATION VALIDATION
         # -------------------------------
-        duration_sec = len(frames) / effective_fps if effective_fps > 0 else 0
+        duration_sec = frame_count / effective_fps if effective_fps > 0 else 0
 
-        if len(frames) < MIN_FRAMES_REQUIRED:
+        if frame_count < MIN_FRAMES_REQUIRED:
             return jsonify({
-                "error": f"Video too short ({len(frames)} frames). Please record at least {MIN_VIDEO_DURATION_SEC:.0f} seconds of video."
+                "error": f"Video too short ({frame_count} frames). Please record at least {MIN_VIDEO_DURATION_SEC:.0f} seconds of video."
             }), 400
 
         if duration_sec < MIN_VIDEO_DURATION_SEC:
@@ -134,7 +134,6 @@ def predict():
         # -------------------------------
         # PROCESS PPG SIGNAL (pass FPS)
         # -------------------------------
-        signal = extract_ppg_signal(frames)
         signal = remove_motion_artifacts(signal, fps=effective_fps)
         signal = adaptive_bandpass_filter(signal, fps=effective_fps)
         signal = smooth_signal(signal)
@@ -170,7 +169,7 @@ def predict():
         # -------------------------------
         peaks = detect_peaks(signal, fps=effective_fps)
         heart_rate = calculate_heart_rate(
-            peaks, len(frames), fps=effective_fps, signal=signal
+            peaks, frame_count, fps=effective_fps, signal=signal
         )
 
         if heart_rate == 0:
