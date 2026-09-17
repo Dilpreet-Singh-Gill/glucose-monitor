@@ -22,14 +22,18 @@ const navTheme = {
   },
 };
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 export default function App() {
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
-      <AuthProvider>
-        <NavigationContainer theme={navTheme}>
-          <AppNavigator />
-        </NavigationContainer>
-      </AuthProvider>
-    </View>
+    <SafeAreaProvider>
+      <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+        <AuthProvider>
+          <NavigationContainer theme={navTheme}>
+            <AppNavigator />
+          </NavigationContainer>
+        </AuthProvider>
+      </View>
+    </SafeAreaProvider>
   );
 }
