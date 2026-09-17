@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
@@ -108,77 +108,33 @@ export const api = {
       : `${fileName || 'glucose-recording'}.mp4`;
 
     try {
-      /*
-       * Convert the local file URI into an Expo File object.
-       * This avoids the Unsupported FormDataPart implementation error.
-       */
-      const videoFile = new File(videoUri);
+      console.log('Sending video via FileSystem.uploadAsync...');
 
-      console.log(
-        'Video file exists:',
-        videoFile.exists
+      const response = await FileSystem.uploadAsync(
+        `${BASE_URL}/predict`,
+        videoUri,
+        {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'video',
+          mimeType: 'video/mp4',
+        }
       );
 
-      console.log(
-        'Video file name:',
-        videoFile.name
-      );
+      console.log(`Prediction response: ${response.status}`, response.body);
 
-      const formData = new FormData();
-
-      /*
-       * Important:
-       * Append the actual File object, not { uri, name, type }.
-       */
-      formData.append('video', videoFile, safeFileName);
-
-      const controller = new AbortController();
-
-      const timeout = setTimeout(() => {
-        controller.abort();
-      }, 120000);
-
+      let data;
       try {
-        console.log(
-          'Sending video as multipart FormData...'
-        );
-
-        const response = await fetch(
-          `${BASE_URL}/predict`,
-          {
-            method: 'POST',
-            body: formData,
-            signal: controller.signal,
-          }
-        );
-
-        const responseText = await response.text();
-
-        console.log(
-          `Prediction response: ${response.status}`,
-          responseText
-        );
-
-        let data;
-
-        try {
-          data = JSON.parse(responseText);
-        } catch {
-          throw new Error(
-            `Invalid prediction response: ${responseText}`
-          );
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            data.error || 'Prediction failed'
-          );
-        }
-
-        return data;
-      } finally {
-        clearTimeout(timeout);
+        data = JSON.parse(response.body);
+      } catch {
+        throw new Error(`Invalid prediction response: ${response.body}`);
       }
+
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(data.error || 'Prediction failed');
+      }
+
+      return data;
     } catch (error) {
       if (error.name === 'AbortError') {
         throw new Error(
