@@ -2,60 +2,102 @@ import * as FileSystem from 'expo-file-system';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
+const REQUEST_TIMEOUT_MS = 60000; // 60s — enough for Render cold starts
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 3000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isNetworkError(error) {
+  const msg = (error?.message || '').toLowerCase();
+  return (
+    error?.name === 'AbortError' ||
+    msg.includes('network request failed') ||
+    msg.includes('fetch failed') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network error') ||
+    msg.includes('aborted') ||
+    msg.includes('timeout')
+  );
+}
+
 async function request(endpoint, options = {}) {
-  const controller = new AbortController();
+  let lastError;
 
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 30000);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
 
-  try {
-    console.log(`API request: ${BASE_URL}${endpoint}`);
-
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      ...options,
-      signal: controller.signal,
-    });
-
-    const responseText = await response.text();
-
-    console.log(
-      `API response: ${response.status}`,
-      responseText
-    );
-
-    let data;
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
 
     try {
-      data = JSON.parse(responseText);
-    } catch {
-      throw new Error(
-        `Invalid server response: ${responseText}`
+      if (attempt > 0) {
+        console.log(
+          `Retry ${attempt}/${MAX_RETRIES} for ${endpoint} (server may be waking up)...`
+        );
+        await sleep(RETRY_DELAY_MS);
+      }
+
+      console.log(`API request: ${BASE_URL}${endpoint}`);
+
+      const response = await fetch(`${BASE_URL}${endpoint}`, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      const responseText = await response.text();
+
+      console.log(
+        `API response: ${response.status}`,
+        responseText
       );
+
+      let data;
+
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(
+          `Invalid server response: ${responseText}`
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || `Request failed with status ${response.status}`
+        );
+      }
+
+      return data;
+    } catch (error) {
+      lastError = error;
+
+      clearTimeout(timeout);
+
+      // Only retry on network/timeout errors, not on server-side errors
+      if (isNetworkError(error) && attempt < MAX_RETRIES) {
+        console.log(
+          `Network error on attempt ${attempt + 1}: ${error.message}. Retrying...`
+        );
+        continue;
+      }
+
+      if (error.name === 'AbortError') {
+        throw new Error(
+          'Request timed out. The server may be starting up — please try again in a moment.'
+        );
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    if (!response.ok) {
-      throw new Error(
-        data.error || `Request failed with status ${response.status}`
-      );
-    }
-
-    return data;
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      throw new Error(
-        'Request timed out. Check that the backend is running and your phone is connected to the same Wi-Fi.'
-      );
-    }
-
-    console.log(
-      `API request error: ${error.message}`
-    );
-
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw lastError;
 }
 
 export const api = {
@@ -107,48 +149,70 @@ export const api = {
       ? fileName
       : `${fileName || 'glucose-recording'}.mp4`;
 
-    try {
-      console.log('Sending video via FileSystem.uploadAsync...');
+    let lastError;
 
-      const response = await FileSystem.uploadAsync(
-        `${BASE_URL}/predict`,
-        videoUri,
-        {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          fieldName: 'video',
-          mimeType: 'video/mp4',
-        }
-      );
-
-      console.log(`Prediction response: ${response.status}`, response.body);
-
-      let data;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        data = JSON.parse(response.body);
-      } catch {
-        throw new Error(`Invalid prediction response: ${response.body}`);
-      }
+        if (attempt > 0) {
+          console.log(
+            `Retry ${attempt}/${MAX_RETRIES} for /predict (server may be waking up)...`
+          );
+          await sleep(RETRY_DELAY_MS);
+        }
 
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(data.error || 'Prediction failed');
-      }
+        console.log('Sending video via FileSystem.uploadAsync...');
 
-      return data;
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new Error(
-          'Prediction timed out. The video may be too large or the backend is processing slowly.'
+        const response = await FileSystem.uploadAsync(
+          `${BASE_URL}/predict`,
+          videoUri,
+          {
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            fieldName: 'video',
+            mimeType: 'video/mp4',
+          }
         );
+
+        console.log(`Prediction response: ${response.status}`, response.body);
+
+        let data;
+        try {
+          data = JSON.parse(response.body);
+        } catch {
+          throw new Error(`Invalid prediction response: ${response.body}`);
+        }
+
+        if (response.status < 200 || response.status >= 300) {
+          throw new Error(data.error || 'Prediction failed');
+        }
+
+        return data;
+      } catch (error) {
+        lastError = error;
+
+        if (isNetworkError(error) && attempt < MAX_RETRIES) {
+          console.log(
+            `Upload error on attempt ${attempt + 1}: ${error.message}. Retrying...`
+          );
+          continue;
+        }
+
+        console.log(
+          'Prediction request error:',
+          error.message
+        );
+
+        if (isNetworkError(error)) {
+          throw new Error(
+            'Could not reach the server. It may still be starting up — please wait a moment and try again.'
+          );
+        }
+
+        throw error;
       }
-
-      console.log(
-        'Prediction request error:',
-        error.message
-      );
-
-      throw error;
     }
+
+    throw lastError;
   },
 };
 
