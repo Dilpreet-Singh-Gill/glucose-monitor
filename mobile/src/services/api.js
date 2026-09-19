@@ -1,5 +1,3 @@
-import * as FileSystem from 'expo-file-system';
-
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
 const REQUEST_TIMEOUT_MS = 60000; // 60s — enough for Render cold starts
@@ -160,31 +158,50 @@ export const api = {
           await sleep(RETRY_DELAY_MS);
         }
 
-        console.log('Sending video via FileSystem.uploadAsync...');
+        console.log('Sending video via XMLHttpRequest...');
 
-        const response = await FileSystem.uploadAsync(
-          `${BASE_URL}/predict`,
-          videoUri,
-          {
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            fieldName: 'video',
-            mimeType: 'video/mp4',
-          }
-        );
+        const data = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `${BASE_URL}/predict`);
+          xhr.timeout = REQUEST_TIMEOUT_MS;
 
-        console.log(`Prediction response: ${response.status}`, response.body);
+          xhr.onload = () => {
+            console.log(`Prediction response: ${xhr.status}`, xhr.responseText);
 
-        let data;
-        try {
-          data = JSON.parse(response.body);
-        } catch {
-          throw new Error(`Invalid prediction response: ${response.body}`);
-        }
+            let parsed;
+            try {
+              parsed = JSON.parse(xhr.responseText);
+            } catch {
+              reject(new Error(`Invalid prediction response: ${xhr.responseText}`));
+              return;
+            }
 
-        if (response.status < 200 || response.status >= 300) {
-          throw new Error(data.error || 'Prediction failed');
-        }
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(parsed);
+            } else {
+              reject(new Error(parsed.error || 'Prediction failed'));
+            }
+          };
+
+          xhr.onerror = () => {
+            reject(new Error('Network request failed'));
+          };
+
+          xhr.ontimeout = () => {
+            reject(new Error(
+              'Upload timed out. The server may be starting up — please try again in a moment.'
+            ));
+          };
+
+          const formData = new FormData();
+          formData.append('video', {
+            uri: videoUri,
+            name: safeFileName,
+            type: 'video/mp4',
+          });
+
+          xhr.send(formData);
+        });
 
         return data;
       } catch (error) {
